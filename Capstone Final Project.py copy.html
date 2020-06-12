@@ -1,0 +1,594 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# ## Capstone Project Final - The Battle of Neighborhoods
+
+# ## 0. Introduction
+# This final project explores the best Korean restaurants throughout the New York City. With the passing of the Hart-Cellar Immigration Act of 1965, Koreans began flocking to the US in large numbers. According to the Census in 1990 and 2000, that immigration is still occurring. The number of Koreans in the city has increased by 16,755 from 1990 to 2000. Koreatown has its origins in a bookstore and several restaurants. The bookstore that started it is known as Koryo Books and features many Korean books as well as other merchandise. The first Korean restaurant on the street (at least they claim to be the first), is Kom Tang. Kang Suh is another restaurant that opened up for business in Koreatown. Refer to A New Korea: Businesses of a Blooming Culture for more information on these businesses.
+# 
+# #### • This report explores which neighborhoods and boroughs of New York City have the most as well as the best Korean restaurants. 
+# 
+# #### • Additionally, I will attempt to answer the questions “Where should I open an Korean Restaurant?” and “Where should I stay If I want great Korean food?”
+
+# ## 1. Data
+# In order to answer the above questions, data on New York City neighborhoods, boroughs to include boundaries, latitude, longitude, restaurants, and restaurant ratings and tips are required.
+# 
+# #### • New York City data containing the neighborhoods and boroughs, latitudes, and longitudes will be obtained from the data source: https://cocl.us/new_york_dataset
+# 
+# #### • New York City data containing neighborhood boundaries will be obtained from the data source: https://data.cityofnewyork.us/City-Government/Borough-Boundaries/tqmj-j8zm
+# 
+# #### • Also, all data related to locations and quality of Korean restaurants will be obtained via the FourSquare API utilized via the Request library in Python.
+
+# ## 3. Methodology
+# • Data will be collected from https://cocl.us/new_york_dataset and cleaned and processed into a dataframe. 
+# 
+# • FourSquare be used to locate all venues and then filtered by Korean restaurants. Ratings, tips, and likes by users will be counted and added to the dataframe.
+# 
+# •Data will be sorted based on rankings
+# 
+# • Finally, the data be will be visually assessed using graphing from various Python libraries.
+
+# ## 4. Problem Statement
+# #### What is / are the best location(s) for Korean retaurants in New York City?
+# #### In what Neighborhood and/or borough should I open an Korean restaurant to have the best chance of being successful?
+# #### Where would I go in New York City to have the best Korean food?
+
+# 
+
+# In[21]:
+
+
+import pandas as pd
+import numpy as np
+
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_rows', None)
+
+import requests
+from bs4 import BeautifulSoup
+from geopy.geocoders import Nominatim # convert an address into latitude and longitude values
+#!conda install -c conda-forge folium
+
+import os
+import folium # map rendering library
+# Matplotlib and associated plotting modules
+
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import matplotlib.colors as colors
+import matplotlib as mp
+import re
+import csv
+get_ipython().run_line_magic('matplotlib', 'inline')
+
+
+print('Libraries imported.')
+
+
+# #### Neighborhoods using FourSquare API & New York City data that contains list Boroughs, Neighbourhoods along with their latitude and longitude
+
+# In[22]:
+
+
+def geo_location(address):
+    # get geo location of address
+    geolocator = Nominatim(user_agent="ny_explorer")
+    locatidn = geolocator.geocode(address)
+    latitude = location.latitude
+    longitude = location.longitude
+    return latitude,longitude
+
+
+# #### Define a function to intract with FourSquare API and get top 100 venues within a radius of 1000 metres for a given latitude and longitude.
+
+# In[57]:
+
+
+def geo_location(address):
+    # get geo location of address
+    geolocator = Nominatim(user_agent="ny_explorer")
+    locatidn = geolocator.geocode(address)
+    latitude = location.latitude
+    longitude = location.longitude
+    return latitude,longitude
+
+def get_venues(lat,lng):
+    
+    #set variables
+    radius=1000
+    LIMIT=100
+    CLIENT_ID = 'FTC2UGWZTER5G0LAAE1BXXDN0TJXWQOH1RAD2INUWZ2K3RH1'# Foursquare ID, note there is a daily call quota limit 
+    CLIENT_SECRET ='APPU5FO3AL5VV2BHJXOAYGZCTBYE5H5USRUNBCZ0DKXPCQO0' # Foursquare Secret, note there is a daily call quota it
+    VERSION = '20180605' # Foursquare API version
+    
+    #url to fetch data from foursquare api
+    url = 'https://api.foursquare.com/v2/venues/explore?&client_id={}&client_secret={}&v={}&ll={},{}&radius={}&limit={}'.format(
+            CLIENT_ID, 
+            CLIENT_SECRET, 
+            VERSION, 
+            lat, 
+            lng, 
+            radius, 
+            LIMIT)
+    
+    # get all the data
+    results = requests.get(url).json()
+    venue_data=results["response"]['groups'][0]['items']
+    venue_details=[]
+    for row in venue_data:
+        try:
+            venue_id=row['venue']['id']
+            venue_name=row['venue']['name']
+            venue_category=row['venue']['categories'][0]['name']
+            venue_details.append([venue_id,venue_name,venue_category])
+        except KeyError:
+            pass
+        
+    column_names=['ID','Name','Category']
+    df = pd.DataFrame(venue_details,columns=column_names)
+    return df
+
+
+# #### Define a function to get venue details like like count , rating , tip counts for a given venue id. to be used for ranking.
+
+# In[58]:
+
+
+def get_venue_details(venue_id):
+        
+    CLIENT_ID = 'FTC2UGWZTER5G0LAAE1BXXDN0TJXWQOH1RAD2INUWZ2K3RH1'# Foursquare ID, note there is a daily call quota limit 
+    CLIENT_SECRET ='APPU5FO3AL5VV2BHJXOAYGZCTBYE5H5USRUNBCZ0DKXPCQO0' # Foursquare Secret, note there is a daily call quota it it
+    VERSION = '20180605' # Foursquare API version
+    
+    #url to fetch data from foursquare api
+    url = 'https://api.foursquare.com/v2/venues/{}?&client_id={}&client_secret={}&v={}'.format(
+            venue_id,
+            CLIENT_ID, 
+            CLIENT_SECRET, 
+            VERSION)
+    
+    # get all the data
+    results = requests.get(url).json()
+    venue_data=results['response']['venue']
+    venue_details=[]
+    try:
+        venue_id=venue_data['id']
+        venue_name=venue_data['name']
+        venue_likes=venue_data['likes']['count']
+        venue_rating=venue_data['rating']
+        venue_tips=venue_data['tips']['count']
+        venue_details.append([venue_id,venue_name,venue_likes,venue_rating,venue_tips])
+    except KeyError:
+        pass
+        
+    column_names=['ID','Name','Likes','Rating','Tips']
+    df = pd.DataFrame(venue_details,columns=column_names)
+    return df
+
+
+# #### Define a funtion to get the New York city data such as Boroughs, Neighborhoods along with their latitude and longitude.
+
+# In[59]:
+
+
+def get_new_york_data():
+    url='https://cocl.us/new_york_dataset'
+    resp=requests.get(url).json()
+    # all data is present in features label
+    features=resp['features']
+    
+    # define the dataframe columns
+    column_names = ['Borough', 'Neighborhood', 'Latitude', 'Longitude'] 
+    # instantiate the dataframe
+    new_york_data = pd.DataFrame(columns=column_names)
+    
+    for data in features:
+        borough = data['properties']['borough'] 
+        neighborhood_name = data['properties']['name']
+        
+        neighborhood_latlon = data['geometry']['coordinates']
+        neighborhood_lat = neighborhood_latlon[1]
+        neighborhood_lon = neighborhood_latlon[0]
+    
+        new_york_data = new_york_data.append({'Borough': borough,
+                                          'Neighborhood': neighborhood_name,
+                                          'Latitude': neighborhood_lat,
+                                          'Longitude': neighborhood_lon}, ignore_index=True)
+    
+    return new_york_data
+
+
+# In[60]:
+
+
+# get new york data
+new_york_data=get_new_york_data()
+
+
+# In[61]:
+
+
+new_york_data.head()
+
+
+# In[62]:
+
+
+new_york_data.shape
+
+
+# #### Based on the dataset, there are a total of 306 different Neighborhoods in New York to select from
+
+# In[63]:
+
+
+from matplotlib import pyplot as plt
+plt.style.use('ggplot')
+
+plt.figure(figsize=(9,5), dpi = 80)
+# title
+plt.title('Number of Neighbourhood in NYC by Borough')
+#On x-axis
+plt.xlabel('Borough', fontsize = 15)
+#On y-axis
+plt.ylabel('No.of Neighborhood', fontsize=15)
+#giving a bar plot
+new_york_data.groupby('Borough')['Neighborhood'].count().plot(kind='bar')
+#legend
+plt.legend()
+plt.show()
+
+
+# #### Based on the data, Queens is the most densely populated borough in New York City with 80 neighborhoods
+
+# In[68]:
+
+
+# prepare neighborhood list that contains korean restaurant
+column_names=['Borough', 'Neighborhood', 'ID','Name']
+korean_rest_ny=pd.DataFrame(columns=column_names)
+count=1
+for row in new_york_data.values.tolist():
+    Borough, Neighborhood, Latitude, Longitude=row
+    venues = get_venues(Latitude,Longitude)
+    korean_resturants=venues[venues['Category']=='Korean Restaurant']   
+    print('(',count,'/',len(new_york_data),')','Korean Resturants in '+Neighborhood+', '+Borough+':'+str(len(korean_resturants)))
+    for resturant_detail in korean_resturants.values.tolist():
+        id, name , category=resturant_detail
+        korean_rest_ny = korean_rest_ny.append({'Borough': Borough,
+                                                'Neighborhood': Neighborhood, 
+                                                'ID': id,
+                                                'Name' : name
+                                               }, ignore_index=True)
+    count+=1
+
+
+# In[69]:
+
+
+korean_rest_ny.head()
+
+
+# In[70]:
+
+
+korean_rest_ny.shape
+
+
+# In[71]:
+
+
+from matplotlib import pyplot as plt
+plt.style.use('ggplot')
+
+plt.figure(figsize=(9,5), dpi = 100)
+# title
+plt.title('Number of Korean Restaurants in NYC by Borough')
+#On x-axis
+plt.xlabel('Borough', fontsize = 15)
+#On y-axis
+plt.ylabel('No.of Korean Restaurant', fontsize=15)
+#giving a bar plot
+korean_rest_ny.groupby('Borough')['ID'].count().plot(kind='bar')
+#legend
+plt.legend()
+#displays the plot
+plt.show()
+
+
+# #### It is noted that Queens has the highest number of Korean Restaurants
+
+# In[72]:
+
+
+korean_rest_ny[korean_rest_ny['Borough']=='Queens']
+
+
+# In[73]:
+
+
+from matplotlib import pyplot as plt
+plt.style.use('ggplot')
+
+plt.figure(figsize=(9,5), dpi = 100)
+# title
+plt.title('Number of Korean Restaurants in NYC by Neighbourhood')
+#On x-axis
+plt.xlabel('Neighborhood', fontsize = 15)
+#On y-axis
+plt.ylabel('No.of Indian Restaurants', fontsize=15)
+#giving a bar plot
+korean_rest_ny.groupby('Neighborhood')['ID'].count().nlargest(5).plot(kind='bar')
+#legend
+plt.legend()
+#displays the plot
+plt.show()
+
+
+# #### Murray Hill in Queens has the most Indian Resturants with a total count of 40.
+
+# In[74]:
+
+
+column_names=['Borough', 'Neighborhood', 'ID','Name','Likes','Rating','Tips']
+korean_rest_stats_ny=pd.DataFrame(columns=column_names)
+count=1
+
+
+for row in korean_rest_ny.values.tolist():
+    Borough,Neighborhood,ID,Name=row
+
+    # prepare neighborhood list that contains korean resturants
+column_names=['Borough', 'Neighborhood', 'ID','Name','Likes','Rating','Tips']
+korean_rest_stats_ny=pd.DataFrame(columns=column_names)
+count=1
+
+
+for row in korean_rest_ny.values.tolist():
+    Borough,Neighborhood,ID,Name=row
+    try:
+        venue_details=get_venue_details(ID)
+        print(venue_details)
+        id,name,likes,rating,tips=venue_details.values.tolist()[0]
+    except (IndexError, KeyError) as e:
+        print('No data available for id=',ID)
+        # we will assign 0 value for these resturants as they may have been 
+        #recently opened or details does not exist in FourSquare Database
+        id,name,likes,rating,tips=[0]*5
+    print('(',count,'/',len(korean_rest_ny),')','processed')
+    korean_rest_stats_ny = korean_rest_stats_ny.append({'Borough': Borough,
+                                                'Neighborhood': Neighborhood, 
+                                                'ID': id,
+                                                'Name' : name,
+                                                'Likes' : likes,
+                                                'Rating' : rating,
+                                                'Tips' : tips
+                                               }, ignore_index=True)
+    count+=1
+
+
+# In[75]:
+
+
+korean_rest_stats_ny.head()
+
+
+# In[76]:
+
+
+korean_rest_stats_ny.shape
+
+
+# In[77]:
+
+
+korean_rest_ny.shape
+
+
+# In[78]:
+
+
+korean_rest_stats_ny.to_csv('korean_rest_stats_ny.csv', index=False)
+
+
+# In[79]:
+
+
+korean_rest_stats_ny_csv=pd.read_csv('korean_rest_stats_ny.csv')
+
+
+# In[80]:
+
+
+korean_rest_stats_ny_csv.shape
+
+
+# In[81]:
+
+
+korean_rest_stats_ny_csv.head()
+
+
+# In[82]:
+
+
+korean_rest_stats_ny.info()
+
+
+# In[83]:
+
+
+korean_rest_stats_ny['Likes']=korean_rest_stats_ny['Likes'].astype('float64')
+
+
+# In[84]:
+
+
+korean_rest_stats_ny['Tips']=korean_rest_stats_ny['Tips'].astype('float64')
+
+
+# In[85]:
+
+
+korean_rest_stats_ny.info()
+
+
+# In[86]:
+
+
+# Restaurants with maximum Likes
+korean_rest_stats_ny.iloc[korean_rest_stats_ny['Likes'].idxmax()]
+
+
+# In[87]:
+
+
+# Restaurants with maximum Rating
+korean_rest_stats_ny.iloc[korean_rest_stats_ny['Rating'].idxmax()]
+
+
+# In[88]:
+
+
+# Restaurants with maximum Tips
+korean_rest_stats_ny.iloc[korean_rest_stats_ny['Tips'].idxmax()]
+
+
+# In[89]:
+
+
+ny_neighborhood_stats=korean_rest_stats_ny.groupby('Neighborhood',as_index=False).mean()[['Neighborhood','Rating']]
+ny_neighborhood_stats.columns=['Neighborhood','Average Rating']
+
+
+# In[90]:
+
+
+ny_neighborhood_stats.sort_values(['Average Rating'],ascending=False).head(10)
+
+
+# In[91]:
+
+
+ny_borough_stats=korean_rest_stats_ny.groupby('Borough',as_index=False).mean()[['Borough','Rating']]
+ny_borough_stats.columns=['Borough','Average Rating']
+
+
+# In[92]:
+
+
+ny_borough_stats.sort_values(['Average Rating'],ascending=False).head()
+
+
+# In[103]:
+
+
+plt.figure(figsize=(9,5), dpi = 100)
+# title
+plt.title('Average rating of Korean Restaurant in each  NYC Borough')
+#On x-axis
+plt.xlabel('Borough', fontsize = 15)
+#On y-axis
+plt.ylabel('Average Rating', fontsize=15)
+#giving a bar plot
+korean_rest_stats_ny.groupby('Borough').mean()['Rating'].plot(kind='bar')
+#legend
+plt.legend()
+#displays the plot
+plt.show()
+
+
+# #### All the neighborhoods with average rating greater or equal 8.0 to be visualized on map¶
+
+# In[94]:
+
+
+ny_neighborhood_stats=ny_neighborhood_stats[ny_neighborhood_stats['Average Rating']>=8.0]
+
+
+# In[95]:
+
+
+ny_neighborhood_stats
+
+
+# In[96]:
+
+
+ny_neighborhood_stats=pd.merge(ny_neighborhood_stats,new_york_data, on='Neighborhood')
+
+
+# In[97]:
+
+
+ny_neighborhood_stats=ny_neighborhood_stats[['Borough','Neighborhood','Latitude','Longitude','Average Rating']]
+
+
+# In[98]:
+
+
+ny_neighborhood_stats.sort_values(['Average Rating'],ascending=False).head(10)
+
+
+# In[99]:
+
+
+# create map and display it
+ny_map = folium.Map(location=(40.693943, -73.985880), zoom_start=12)
+
+
+# In[100]:
+
+
+# instantiate a feature group for the incidents in the dataframe
+incidents = folium.map.FeatureGroup()
+
+# loop through the 100 crimes and add each to the incidents feature group
+for lat, lng, in ny_neighborhood_stats[['Latitude','Longitude']].values:
+    incidents.add_child(
+        folium.CircleMarker(
+            [lat, lng],
+            radius=10, # define how big you want the circle markers to be
+            color='yellow',
+            fill=True,
+            fill_color='blue',
+            fill_opacity=0.6
+        )
+    )
+
+
+# In[101]:
+
+
+ny_neighborhood_stats['Label']=ny_neighborhood_stats['Neighborhood']+', '+ny_neighborhood_stats['Borough']+'('+ny_neighborhood_stats['Average Rating'].map(str)+')'
+
+
+# #### Best neighbourhoods in New York that has highest average rating for Korean Restaurants.
+
+# In[102]:
+
+
+# add pop-up text to each marker on the map
+for lat, lng, label in ny_neighborhood_stats[['Latitude','Longitude','Label']].values:
+    folium.Marker([lat, lng], popup=label).add_to(ny_map)        
+# add incidents to map
+ny_map.add_child(incidents)
+
+
+# ## Findings
+# #### Manhattan/ Astoria, Queens/ Bushwick, Brooklyn are some of the best neighborhoods for Korean cuisine.
+# #### Manhattan Valley has the lowest rated Korean Resturants in NYC.
+# #### Manhattan is the best place to stay if you prefer Korean Cuisine.
+# 
+# ## Recommendation
+# #### Midtown or Tribeca in Manhattan would be the best choice to start a restaurant given that
+# 
+# it is the third most populous urban area in New York City (NYC).
+# it has a population density of 27,826 people per square km, highest of any borough in the United States.
+# It has the second highest Asian ethnic minority population in NYC.
+
+# In[ ]:
+
+
+
+
